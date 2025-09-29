@@ -139,9 +139,9 @@
         tg.ready();
         tg.expand();
 
-        // API Configuration
-        const API_BASE = 'http://127.0.0.1:8000';
-        
+        // ✅ API Configuration (замени ссылку при необходимости)
+        const API_BASE = 'https://western-keeps-suspension-louisiana.trycloudflare.com';
+
         // Game state
         let gameState = {
             points: 0,
@@ -170,10 +170,10 @@
             document.getElementById('trees').textContent = gameState.trees;
             document.getElementById('level').textContent = gameState.level;
             document.getElementById('energy').textContent = `${gameState.energy}/100`;
-            
+
             const energyPercent = (gameState.energy / 100) * 100;
             document.getElementById('energyBar').style.width = `${energyPercent}%`;
-            
+
             const tapButton = document.getElementById('tapButton');
             if (gameState.energy <= 0) {
                 tapButton.style.opacity = '0.5';
@@ -190,7 +190,7 @@
             messageEl.textContent = message;
             messageEl.className = `status-message ${type}`;
             messageEl.style.display = 'block';
-            
+
             setTimeout(() => {
                 messageEl.style.display = 'none';
             }, 3000);
@@ -212,13 +212,13 @@
                         last_name: userData.last_name
                     })
                 });
-                
+
                 const data = await response.json();
                 if (data.progress) {
                     gameState = data.progress;
                     updateUI();
                 }
-                
+
                 if (data.registered) {
                     showMessage('Welcome to EcoTap!');
                 } else {
@@ -232,11 +232,11 @@
 
         async function sendTap() {
             if (isLoading || gameState.energy <= 0) return;
-            
+
             isLoading = true;
             const tapButton = document.getElementById('tapButton');
             tapButton.classList.add('loading');
-            
+
             try {
                 const response = await fetch(`${API_BASE}/api/tap`, {
                     method: 'POST',
@@ -248,7 +248,7 @@
                         taps: 1
                     })
                 });
-                
+
                 if (response.ok) {
                     const data = await response.json();
                     gameState = data;
@@ -286,9 +286,9 @@
         async function initGame() {
             userId = getUserId();
             console.log('User ID:', userId);
-            
+
             await registerUser();
-            
+
             // Sync progress every 30 seconds
             setInterval(loadProgress, 30000);
         }

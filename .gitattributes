@@ -1,0 +1,17 @@
+# Force GitHub to recognize project languages correctly
+*.py linguist-language=Python
+*.html linguist-language=HTML
+*.css linguist-language=CSS
+*.js linguist-language=JavaScript
+
+# Handle line endings
+*.sh text eol=lf
+*.py text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+
+# Mark large binaries as binary
+*.zip binary
+*.tar.gz binary
+*.db binary

@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# Virtual env
+.venv/
+env/
+venv/
+
+# Logs
+*.log
+*.out
+*.err
+
+# Environment
+.env
+.env.*
+
+# Node.js (если будешь собирать фронтенд)
+node_modules/
+dist/
+build/
+package-lock.json
+yarn.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
+*_backup.*
+*.zip
+*.tar.gz
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
