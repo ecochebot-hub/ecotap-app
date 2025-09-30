@@ -1,33 +1,60 @@
 #!/bin/bash
 
 echo "⛔ Останавливаю старые процессы..."
-pkill -f "uvicorn" 2>/dev/null
-pkill -f "bot.py" 2>/dev/null
-pkill -f "cloudflared" 2>/dev/null
+# Убиваем все старые процессы, чтобы избежать конфликтов
+pkill -f "uvicorn api:app"
+pkill -f "python bot.py"
+pkill -f "cloudflared"
+pkill -f "python -m http.server"
 sleep 2
 
-echo "🌱 Запускаю API (uvicorn)..."
+# --- БЭКЕНД ---
+echo "🌱 Запускаю API (uvicorn) на порту 8080..."
 nohup uvicorn api:app --host 0.0.0.0 --port 8080 > api.log 2>&1 &
+sleep 2
 
 echo "🤖 Запускаю бота..."
 nohup python bot.py > bot.log 2>&1 &
+sleep 2
 
-echo "🌍 Запускаю Cloudflare Tunnel..."
-nohup cloudflared tunnel --url http://localhost:8080 --no-autoupdate > tunnel.log 2>&1 &
+echo "🌍 Запускаю Cloudflare Tunnel для API..."
+nohup cloudflared tunnel --url http://localhost:8080 > tunnel.log 2>&1 &
 
-sleep 8  # ждём пока tunnel.log появится URL
+# --- ФРОНТЕНД ---
+echo "🎨 Запускаю сервер для фронтенда на порту 8081..."
+# Запускаем сервер в папке, где лежит index.html
+(cd ~/ecotap-app && nohup python -m http.server 8081 > ~/ecotap-app/frontend.log 2>&1 &)
+sleep 2
 
-# Ищем URL в tunnel.log
-URL=$(grep -oE "https://[a-zA-Z0-9.-]+\.trycloudflare.com" tunnel.log | tail -n 1)
+echo "🌐 Запускаю Cloudflare Tunnel для ФРОНТЕНДА..."
+nohup cloudflared tunnel --url http://localhost:8081 > ~/ecotap-app/frontend_tunnel.log 2>&1 &
 
-if [ -n "$URL" ]; then
-    echo "🌍 Найден новый URL: $URL"
-    # Обновляем index.html
-    sed -i "s|const API_BASE = .*|const API_BASE = '${URL}';|" ~/ecotap-app/index.html
-    echo "✅ index.html обновлён с новым API_BASE"
+# --- СИНХРОНИЗАЦИЯ ---
+echo "⏳ Жду 8 секунд, пока туннели поднимутся..."
+sleep 8
+
+# Достаём URL бэкенда и обновляем index.html
+BACKEND_URL=$(grep -oE "https://[a-zA-Z0-9.-]+\.trycloudflare.com" tunnel.log | head -n1)
+
+if [ -n "$BACKEND_URL" ]; then
+    echo "🌍 API URL: $BACKEND_URL"
+    sed -i "s|const API_BASE = .*|const API_BASE = '$BACKEND_URL';|" ~/ecotap-app/index.html
+    echo "✅ index.html обновлён с адресом API"
 else
-    echo "❌ Не удалось найти URL в tunnel.log"
+    echo "❌ Не удалось найти URL бэкенда в tunnel.log"
+fi
+
+# Достаём URL фронтенда и показываем его пользователю
+FRONTEND_URL=$(grep -oE "https://[a-zA-Z0-9.-]+\.trycloudflare.com" ~/ecotap-app/frontend_tunnel.log | head -n1)
+
+if [ -n "$FRONTEND_URL" ]; then
+    echo "=============================================================="
+    echo "🔴 ВАЖНО! Ссылка для @BotFather:"
+    echo "   $FRONTEND_URL"
+    echo "=============================================================="
+else
+    echo "❌ Не удалось найти URL фронтенда в frontend_tunnel.log"
 fi
 
 echo "✅ Всё запущено!"
-echo "👉 Логи: tail -f api.log | tail -f bot.log | tail -f tunnel.log"
+
