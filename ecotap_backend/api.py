@@ -1,66 +1,107 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from pydantic import BaseModel
+import sqlite3
 import os
-from database import db
 
 app = FastAPI(title="EcoTap API")
 
-# Разрешаем фронтенду обращаться к API
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+DB_PATH = os.getenv("DATABASE_PATH", "data/ecotap.db")
 
-# ================== FRONTEND ==================
-@app.get("/")
-async def serve_frontend():
-    """Отдаёт index.html как главную страницу"""
-    frontend_path = os.path.join(os.path.dirname(__file__), "../index.html")
-    if os.path.exists(frontend_path):
-        return FileResponse(frontend_path)
-    raise HTTPException(status_code=404, detail="Frontend not found")
+# ---------- Модели ----------
+class RegisterRequest(BaseModel):
+    user_id: int
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
 
-# ================== API ==================
+class TapRequest(BaseModel):
+    user_id: int
+    taps: int = 1
+
+# ---------- База данных ----------
+def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        first_name TEXT,
+        last_name TEXT,
+        points INTEGER DEFAULT 0,
+        trees INTEGER DEFAULT 0,
+        level INTEGER DEFAULT 1,
+        experience INTEGER DEFAULT 0,
+        energy INTEGER DEFAULT 100,
+        total_taps INTEGER DEFAULT 0
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+def get_user(user_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+# ---------- Роуты ----------
 @app.on_event("startup")
-async def startup_event():
-    await db.init_db()
+def startup_event():
+    init_db()
+
+@app.get("/")
+def root():
+    return {"status": "EcoTap API running"}
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "service": "EcoTap API"}
 
 @app.post("/api/register")
-async def register_user(user: dict):
-    user_id = user.get("user_id")
-    username = user.get("username")
-    first_name = user.get("first_name")
-    last_name = user.get("last_name")
-
-    if not user_id:
-        raise HTTPException(status_code=400, detail="Missing user_id")
-
-    registered = await db.register_user(user_id, username, first_name, last_name)
-    progress = await db.get_user_progress(user_id)
-
-    return {"registered": registered, "progress": progress}
-
-@app.get("/api/user/{user_id}")
-async def get_user(user_id: int):
-    progress = await db.get_user_progress(user_id)
-    if not progress:
-        raise HTTPException(status_code=404, detail="User not found")
-    return progress
+def register_user(req: RegisterRequest):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    if get_user(req.user_id):
+        return {"registered": False, "progress": get_user(req.user_id)}
+    c.execute("""
+        INSERT INTO users (user_id, username, first_name, last_name)
+        VALUES (?, ?, ?, ?)
+    """, (req.user_id, req.username, req.first_name, req.last_name))
+    conn.commit()
+    conn.close()
+    return {"registered": True, "progress": get_user(req.user_id)}
 
 @app.post("/api/tap")
-async def tap(data: dict):
-    user_id = data.get("user_id")
-    taps = data.get("taps", 1)
+def tap(req: TapRequest):
+    user = get_user(req.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
-    if not user_id:
-        raise HTTPException(status_code=400, detail="Missing user_id")
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    points = user["points"] + req.taps
+    energy = max(user["energy"] - req.taps, 0)
+    total_taps = user["total_taps"] + req.taps
+    trees = points // 1000
 
-    result = await db.update_taps(user_id, taps)
-    if not result:
-        raise HTTPException(status_code=400, detail="Not enough energy or user not found")
+    c.execute("""
+        UPDATE users
+        SET points=?, energy=?, total_taps=?, trees=?
+        WHERE user_id=?
+    """, (points, energy, total_taps, trees, req.user_id))
+    conn.commit()
+    conn.close()
 
-    return result
+    return get_user(req.user_id)
+
+@app.get("/api/user/{user_id}")
+def user_progress(user_id: int):
+    user = get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
